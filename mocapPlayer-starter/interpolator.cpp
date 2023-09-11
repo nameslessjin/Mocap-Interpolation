@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <float.h>
+#include <iostream>
 #include "motion.h"
 #include "interpolator.h"
 #include "types.h"
@@ -41,11 +42,21 @@ void Interpolator::Interpolate(Motion * pInputMotion, Motion ** pOutputMotion, i
   }
 }
 
+int bIndex = 0;
+int startF = 0;
+int endF = 0;
+int axis = 0;
+bool debug = false;
+
 void Interpolator::LinearInterpolationEuler(Motion * pInputMotion, Motion * pOutputMotion, int N)
 {
   int inputLength = pInputMotion->GetNumFrames(); // frames are indexed 0, ..., inputLength-1
 
   int startKeyframe = 0;
+
+  if (debug) std::cout << "frame count: " << inputLength << " method: Linear Euler" << std::endl;
+
+  // Skip N frames
   while (startKeyframe + N + 1 < inputLength)
   {
     int endKeyframe = startKeyframe + N + 1;
@@ -103,7 +114,20 @@ void Interpolator::Rotation2Euler(double R[9], double angles[3])
 
 void Interpolator::Euler2Rotation(double angles[3], double R[9])
 {
-  // students should implement this
+  double y = angles[0] * M_PI / 180.0f; // gamma
+  double b = angles[1] * M_PI / 180.0f; // beta
+  double a = angles[2] * M_PI / 180.0f; // alpha
+
+  // RzRyRx
+  R[0] = cos(a) * cos(b);
+  R[1] = cos(a) * sin(b) * sin(y) - sin(a) * cos(y);
+  R[2] = cos(a) * sin(b) * cos(y) + sin(a) * sin(y);
+  R[3] = sin(a) * cos(b);
+  R[4] = sin(a) * sin(b) * sin(y) + cos(a) * cos(y);
+  R[5] = sin(a) * sin(b) * cos(y) - cos(a) * sin(y);
+  R[6] = -sin(b);
+  R[7] = cos(b) * sin(y);
+  R[8] = cos(b) * cos(y);
 }
 
 void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOutputMotion, int N)
@@ -123,39 +147,102 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
 
 void Interpolator::Euler2Quaternion(double angles[3], Quaternion<double> & q) 
 {
-  // students should implement this
+  // given euler angles, build rotation matrix, convert matrix to quaternion
+  double R[9];
+  Euler2Rotation(angles, R);
+  q = q.Matrix2Quaternion(R);
+  
 }
 
 void Interpolator::Quaternion2Euler(Quaternion<double> & q, double angles[3]) 
 {
-  // students should implement this
+  // given quaternion, build rotation matrix, extract angles from matrix
+  double R[9];
+  q.Quaternion2Matrix(R);
+  Rotation2Euler(R, angles);
 }
 
 Quaternion<double> Interpolator::Slerp(double t, Quaternion<double> & qStart, Quaternion<double> & qEnd_)
 {
-  // students should implement this
   Quaternion<double> result;
+
+  qStart.Normalize();
+  qEnd_.Normalize();
+
+  double cosTheta = qStart.dot(qEnd_);
+
+  // handle quaternion double cover
+  // quaternion handle the same rotation in two ways, q and -q are the same rotation
+  // To ensure the shortest path is taken during interpolation, if cosTheta < 0, negate q2 and cosThea
+  if (cosTheta < 0.0f)
+  {
+    cosTheta = -cosTheta;
+    qStart = qStart * -1;
+  }
+
+  double theta = acos(cosTheta);
+
+  result = (sin((1 - t) * theta) * qStart + sin(t * theta) * qEnd_) / sin(theta);
+
+  // Handle Near zero dot product
+  // This happens when cosTheta is close to 1, theta is close to 0
+  // Tt means the quaternions are nearly parallel
+  if (isnan(result.Gets()))
+    result = Lerp(t, qStart, qEnd_);
+
   return result;
 }
 
 Quaternion<double> Interpolator::Double(Quaternion<double> p, Quaternion<double> q)
 {
-  // students should implement this
   Quaternion<double> result;
+  
+  double cosTheta = p.dot(q);
+  result = 2 * (cosTheta) * q - p;
   return result;
 }
 
 vector Interpolator::DeCasteljauEuler(double t, vector p0, vector p1, vector p2, vector p3)
 {
-  // students should implement this
   vector result;
+
+  // Linear interpolation between control points
+  vector q0 = Lerp(t, p0, p1);
+  vector q1 = Lerp(t, p1, p2);
+  vector q2 = Lerp(t, p2, p3);
+
+  // Lienar interpolation on the new points
+  vector r0 = Lerp(t, q0, q1);
+  vector r1 = Lerp(t, q1, q2);
+
+  // repeat the interpolation again
+  result = Lerp(t, r0, r1);
+
   return result;
 }
 
 Quaternion<double> Interpolator::DeCasteljauQuaternion(double t, Quaternion<double> p0, Quaternion<double> p1, Quaternion<double> p2, Quaternion<double> p3)
 {
-  // students should implement this
-  Quaternion<double> result;
+
+  // Similar to Euler, instead of LERP, we use SLERP
+  Quaternion<double> result, q0, q1, q2, q3, r0, r1;
+
+  q0 = Slerp(t, p0, p1);
+  q1 = Slerp(t, p1, p2);
+  q2 = Slerp(t, p2, p3);
+  r0 = Slerp(t, q0, q1);
+  r1 = Slerp(t, q1, q2);
+  result = Slerp(t, r0, r1);
+
   return result;
 }
 
+Quaternion<double> Interpolator::Lerp(double t, Quaternion<double> & qStart, Quaternion<double> & qEnd_)
+{
+  return (1 - t) * qStart + t * qEnd_;
+}
+
+vector Interpolator::Lerp(double t, vector start, vector end)
+{
+  return  start * (1 - t) + end * t;
+}

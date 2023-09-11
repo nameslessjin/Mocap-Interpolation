@@ -131,6 +131,9 @@ public:
   // Prints the quaternion to stdout.
   inline void Print() const;
 
+  // calculate the dot product of two quaternions
+  inline double Quaternion<real>::dot(const Quaternion<real> q) const;
+
 protected:
   real s,x,y,z; 
 
@@ -373,6 +376,12 @@ template <typename real>
 inline void Quaternion<real>::Print() const
 {
   printf("%f + %fi + %fj + %fk\n",s,x,y,z);
+}
+
+template <typename real>
+inline double Quaternion<real>::dot(const Quaternion<real> q) const
+{
+  return s * q.s + x * q.x + y * q.y + z * q.z;
 }
 
 #endif
