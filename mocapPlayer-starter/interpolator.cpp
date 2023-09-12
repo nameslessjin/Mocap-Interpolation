@@ -42,19 +42,12 @@ void Interpolator::Interpolate(Motion * pInputMotion, Motion ** pOutputMotion, i
   }
 }
 
-int bIndex = 0;
-int startF = 0;
-int endF = 0;
-int axis = 0;
-bool debug = false;
 
 void Interpolator::LinearInterpolationEuler(Motion * pInputMotion, Motion * pOutputMotion, int N)
 {
   int inputLength = pInputMotion->GetNumFrames(); // frames are indexed 0, ..., inputLength-1
 
   int startKeyframe = 0;
-
-  if (debug) std::cout << "frame count: " << inputLength << " method: Linear Euler" << std::endl;
 
   // Skip N frames
   while (startKeyframe + N + 1 < inputLength)
@@ -136,7 +129,6 @@ void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOut
 
   int startKeyframe = 0;
 
-  if (debug) std::cout << "frame count: " << inputLength << " method: Linear Euler" << std::endl;
 
   // Skip N frames
   while (startKeyframe + N + 1 < inputLength)
@@ -256,7 +248,48 @@ void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOut
 
 void Interpolator::LinearInterpolationQuaternion(Motion * pInputMotion, Motion * pOutputMotion, int N)
 {
-  // students should implement this
+  int inputLength = pInputMotion->GetNumFrames(); // frames are indexed 0, ..., inputLength-1
+
+  int startKeyframe = 0;
+
+  // Skip N frames
+  while (startKeyframe + N + 1 < inputLength)
+  {
+    int endKeyframe = startKeyframe + N + 1;
+
+    Posture * startPosture = pInputMotion->GetPosture(startKeyframe);
+    Posture * endPosture = pInputMotion->GetPosture(endKeyframe);
+
+    // copy start and end keyframe
+    pOutputMotion->SetPosture(startKeyframe, *startPosture);
+    pOutputMotion->SetPosture(endKeyframe, *endPosture);
+
+    // interpolate in between
+    for(int frame=1; frame<=N; frame++)
+    {
+      Posture interpolatedPosture;
+      double t = 1.0 * frame / (N+1);
+
+      // interpolate root position
+      interpolatedPosture.root_pos = Lerp(t, startPosture->root_pos, endPosture->root_pos);
+
+      // interpolate bone rotations
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; bone++)
+      {
+        // get bone rotation angles, build quaternion with them
+        
+
+        interpolatedPosture.bone_rotation[bone] = startPosture->bone_rotation[bone] * (1-t) + endPosture->bone_rotation[bone] * t;
+      }
+
+      pOutputMotion->SetPosture(startKeyframe + frame, interpolatedPosture);
+    }
+
+    startKeyframe = endKeyframe;
+  }
+
+  for(int frame=startKeyframe+1; frame<inputLength; frame++)
+    pOutputMotion->SetPosture(frame, *(pInputMotion->GetPosture(frame)));
 }
 
 void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion * pOutputMotion, int N)
