@@ -54,7 +54,7 @@ protected:
   Quaternion<double> Slerp(double t, Quaternion<double> & qStart, Quaternion<double> & qEnd);
   Quaternion<double> Double(Quaternion<double> p, Quaternion<double> q);
   Quaternion<double> Lerp(double t, Quaternion<double> & qStart, Quaternion<double> & qEnd_);
-  vector Interpolator::Lerp(double t, vector start, vector end);
+  vector Lerp(double t, vector start, vector end);
 
   // interpolation routines
   void LinearInterpolationEuler(Motion * pInputMotion, Motion * pOutputMotion, int N);

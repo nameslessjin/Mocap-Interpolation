@@ -132,7 +132,126 @@ void Interpolator::Euler2Rotation(double angles[3], double R[9])
 
 void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOutputMotion, int N)
 {
-  // students should implement this
+  int inputLength = pInputMotion->GetNumFrames();
+
+  int startKeyframe = 0;
+
+  if (debug) std::cout << "frame count: " << inputLength << " method: Linear Euler" << std::endl;
+
+  // Skip N frames
+  while (startKeyframe + N + 1 < inputLength)
+  {
+    int endKeyframe = startKeyframe + N + 1;
+
+    Posture * startPosture = pInputMotion->GetPosture(startKeyframe);
+    Posture * endPosture = pInputMotion->GetPosture(endKeyframe);
+
+    // copy start and end keyframe
+    pOutputMotion->SetPosture(startKeyframe, *startPosture);
+    pOutputMotion->SetPosture(endKeyframe, *endPosture);
+
+    // control points for bezier
+    int prevStartKeyframe = startKeyframe - N - 1;
+    int nextEndKeyframe = endKeyframe + N + 1;
+    Posture *prevStartPosture = nullptr, *nextEndPosture = nullptr;
+    Posture postureA, postureB;
+
+    if (startKeyframe == 0)
+    {
+      // startKeyFrame is p1, endKeyframe is p2, nextEndKeyframe is p3
+      nextEndPosture = pInputMotion->GetPosture(nextEndKeyframe);
+
+      // special case, need a1 and bn
+      // a1 = lerp(q1, slerp(q3, q2, 2.0), 1.0f / 3) for root
+      postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, Lerp(2.0, nextEndPosture->root_pos, endPosture->root_pos));
+
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        postureA.bone_rotation[bone] = Lerp(1.0f / 3, startPosture->bone_rotation[bone], Lerp(2.0, nextEndPosture->bone_rotation[bone], endPosture->bone_rotation[bone]));
+      }
+
+      // an_- = lerp(lerp(qn-1, qn, 2.0), qn+1, 0.5)
+      // bn = lerp(qn, an_, -1.0 /3)
+      vector an_hat = Lerp(0.5, Lerp(2.0, startPosture->root_pos, endPosture->root_pos), nextEndPosture->root_pos);
+      postureB.root_pos = Lerp(-1.0f / 3, endPosture->root_pos, an_hat);
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        an_hat = Lerp(0.5, Lerp(2.0, startPosture->bone_rotation[bone], endPosture->bone_rotation[bone]), nextEndPosture->bone_rotation[bone]);
+        postureB.bone_rotation[bone] = Lerp(-1.0f / 3, endPosture->bone_rotation[bone], an_hat);
+      }
+    }
+    else if (nextEndKeyframe >= inputLength)
+    {
+      //  prevStartPosture is pn-1, startPosture is pn, endPosture is pn+1
+      prevStartPosture = pInputMotion->GetPosture(prevStartKeyframe);
+
+      // an_- = lerp(lerp(qn-1, qn, 2.0), qn+1, 0.5)
+      // an = lerp(qn, an_, 1.0 / 3)
+      vector an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos), endPosture->root_pos);
+      postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, an_hat);
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]), endPosture->bone_rotation[bone]);
+        postureA.bone_rotation[bone] = Lerp(1.0f / 3, startPosture->bone_rotation[bone], an_hat);
+      }
+
+      // special case
+      // bn = lerp(qn, lerp(qn-2, qn-1, 2.0), 1.0f / 3) for getting the last one.  since we have 1 offset so:
+      // bn+1 = lerp(qn+1, lerp(qn-1, qn, 2.0), 1.0f / 3) 
+      postureB.root_pos = Lerp(1.0f / 3, endPosture->root_pos, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos));
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        postureB.bone_rotation[bone] = Lerp(1.0f / 3, endPosture->bone_rotation[bone], Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]));
+      }
+    }
+    else
+    {
+      // prevStartPosture is pn-1, startKeyFrame is pn, endKeyframe is pn+1, nextEndKeyframe is pn+2
+      prevStartPosture = pInputMotion->GetPosture(prevStartKeyframe);
+      nextEndPosture = pInputMotion->GetPosture(nextEndKeyframe);
+
+      // an_- = lerp(lerp(qn-1, qn, 2.0), qn+1, 0.5)
+      // an = lerp(qn, an_, 1.0 / 3)
+      vector an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos), endPosture->root_pos);
+      postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, an_hat);
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]), endPosture->bone_rotation[bone]);
+        postureA.bone_rotation[bone] = Lerp(1.0f / 3, startPosture->bone_rotation[bone], an_hat);
+      }
+
+      // bn+1 = lerp(qn+1, an+1_, -1.0 /3)
+      an_hat = Lerp(0.5, Lerp(2.0, startPosture->root_pos, endPosture->root_pos), nextEndPosture->root_pos);
+      postureB.root_pos = Lerp(-1.0f / 3, endPosture->root_pos, an_hat);
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
+      {
+        an_hat = Lerp(0.5, Lerp(2.0, startPosture->bone_rotation[bone], endPosture->bone_rotation[bone]), nextEndPosture->bone_rotation[bone]);
+        postureB.bone_rotation[bone] = Lerp(-1.0f / 3, endPosture->bone_rotation[bone], an_hat);
+      }
+    }
+
+    // interpolate in between
+    for(int frame=1; frame<=N; frame++)
+    {
+      Posture interpolatedPosture;
+      double t = 1.0 * frame / (N+1);
+
+      // interpolate root position
+      interpolatedPosture.root_pos =  DeCasteljauEuler(t, startPosture->root_pos, postureA.root_pos, postureB.root_pos, endPosture->root_pos);
+
+      // interpolate bone rotations
+      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; bone++)
+        interpolatedPosture.bone_rotation[bone] = DeCasteljauEuler(t, startPosture->bone_rotation[bone], postureA.bone_rotation[bone], postureB.bone_rotation[bone], endPosture->bone_rotation[bone]);
+
+      pOutputMotion->SetPosture(startKeyframe + frame, interpolatedPosture);
+    }
+
+    startKeyframe = endKeyframe;
+  }
+
+  for(int frame=startKeyframe+1; frame<inputLength; frame++)
+    pOutputMotion->SetPosture(frame, *(pInputMotion->GetPosture(frame)));
+
 }
 
 void Interpolator::LinearInterpolationQuaternion(Motion * pInputMotion, Motion * pOutputMotion, int N)

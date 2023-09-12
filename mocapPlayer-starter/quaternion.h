@@ -132,7 +132,7 @@ public:
   inline void Print() const;
 
   // calculate the dot product of two quaternions
-  inline double Quaternion<real>::dot(const Quaternion<real> q) const;
+  inline double dot(const Quaternion<real> q) const;
 
 protected:
   real s,x,y,z; 
