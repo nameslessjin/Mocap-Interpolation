@@ -154,7 +154,7 @@ void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOut
       nextEndPosture = pInputMotion->GetPosture(nextEndKeyframe);
 
       // special case, need a1 and bn
-      // a1 = lerp(q1, slerp(q3, q2, 2.0), 1.0f / 3) for root
+      // a1 = lerp(q1, lerp(q3, q2, 2.0), 1.0f / 3) for root
       postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, Lerp(2.0, nextEndPosture->root_pos, endPosture->root_pos));
 
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
@@ -229,7 +229,7 @@ void Interpolator::BezierInterpolationEuler(Motion * pInputMotion, Motion * pOut
       double t = 1.0 * frame / (N+1);
 
       // interpolate root position
-      interpolatedPosture.root_pos =  DeCasteljauEuler(t, startPosture->root_pos, postureA.root_pos, postureB.root_pos, endPosture->root_pos);
+      interpolatedPosture.root_pos = DeCasteljauEuler(t, startPosture->root_pos, postureA.root_pos, postureB.root_pos, endPosture->root_pos);
 
       // interpolate bone rotations
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; bone++)
@@ -539,11 +539,7 @@ Quaternion<double> Interpolator::Slerp(double t, Quaternion<double> & qStart, Qu
 
 Quaternion<double> Interpolator::Double(Quaternion<double> p, Quaternion<double> q)
 {
-  Quaternion<double> result;
-  
-  double cosTheta = p.dot(q);
-  result = 2 * (cosTheta) * q - p;
-  return result;
+  return Slerp(2.0, p, q);
 }
 
 vector Interpolator::DeCasteljauEuler(double t, vector p0, vector p1, vector p2, vector p3)
