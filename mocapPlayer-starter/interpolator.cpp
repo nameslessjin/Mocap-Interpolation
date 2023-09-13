@@ -326,17 +326,22 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
     Posture postureA, postureB;
 
     // for bone rotation angles and bone quaternion
-    double startAngles[3], endAngles[3], prevStartAngles[3], nextEndAngles[3], intermediateAngles[3];
-    Quaternion<double> startQ, endQ, prevStartQ, nextEndQ, tmpQ, intermediateQ;
+    double startAngles[3], endAngles[3], prevStartAngles[3], nextEndAngles[3], intermediateAngles[3], aAngles[3], bAngles[3];
+    Quaternion<double> startQ, endQ, prevStartQ, nextEndQ, tmpQ, intermediateQ, an_hat_q, qA, qB;
 
     if (startKeyframe == 0)
     {
-      // startKeyFrame is p1, endKeyframe is p2, nextEndKeyframe is p3
+      // startKeyFrame is q1/qn-1, endKeyframe is q2/qn, nextEndKeyframe is q3/qn+1
       nextEndPosture = pInputMotion->GetPosture(nextEndKeyframe);
 
       // special case, need a1 and bn
       // a1 = lerp(q1, slerp(q3, q2, 2.0), 1.0f / 3) for root
       postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, Lerp(2.0, nextEndPosture->root_pos, endPosture->root_pos));
+
+      // an_- = slerp(slerp(qn-1, qn, 2.0), qn+1, 0.5)
+      // bn = slerp(qn, an_, -1.0 /3)
+      vector an_hat = Lerp(0.5, Lerp(2.0, startPosture->root_pos, endPosture->root_pos), nextEndPosture->root_pos);
+      postureB.root_pos = Lerp(-1.0f / 3, endPosture->root_pos, an_hat);
 
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
       {
@@ -349,48 +354,30 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
         Euler2Quaternion(nextEndAngles, nextEndQ);
 
         // calculate the interpolation with slerp and convert back to euler
+        // for a1
         tmpQ = Slerp(2.0, nextEndQ, endQ);
         intermediateQ = Slerp(1.0f / 3, startQ, tmpQ);
         Quaternion2Euler(intermediateQ, intermediateAngles);
         postureA.bone_rotation[bone] = vector(intermediateAngles);
-      }
 
-      // an_- = lerp(lerp(qn-1, qn, 2.0), qn+1, 0.5)
-      // bn = lerp(qn, an_, -1.0 /3)
-      vector an_hat = Lerp(0.5, Lerp(2.0, startPosture->root_pos, endPosture->root_pos), nextEndPosture->root_pos);
-      postureB.root_pos = Lerp(-1.0f / 3, endPosture->root_pos, an_hat);
-      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
-      {
-        // get bone rotation angles, build intermediate quaternion with them
-        startPosture->bone_rotation[bone].getValue(startAngles);
-        endPosture->bone_rotation[bone].getValue(endAngles);
-        nextEndPosture->bone_rotation[bone].getValue(nextEndAngles);
-        Euler2Quaternion(startAngles, startQ);
-        Euler2Quaternion(endAngles, endQ);
-        Euler2Quaternion(nextEndAngles, nextEndQ);
-
-        Quaternion<double> tmpQ = Slerp(2.0, startQ, endQ);
-        Quaternion<double> an_hat_q = Slerp(0.5, tmpQ, nextEndQ);
+        // for b2
+        tmpQ = Slerp(2.0, startQ, endQ);
+        an_hat_q = Slerp(0.5, tmpQ, nextEndQ);
         intermediateQ = Slerp(-1.0f / 3, endQ, an_hat_q);
         Quaternion2Euler(intermediateQ, intermediateAngles);
-
         postureB.bone_rotation[bone] = vector(intermediateAngles);
+
       }
     }
     else if (nextEndKeyframe >= inputLength)
     {
-      //  prevStartPosture is pn-1, startPosture is pn, endPosture is pn+1
+      //  prevStartPosture is qn-1, startPosture is qn, endPosture is qn+1
       prevStartPosture = pInputMotion->GetPosture(prevStartKeyframe);
 
       // an_- = lerp(lerp(qn-1, qn, 2.0), qn+1, 0.5)
       // an = lerp(qn, an_, 1.0 / 3)
       vector an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos), endPosture->root_pos);
       postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, an_hat);
-      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
-      {
-        an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]), endPosture->bone_rotation[bone]);
-        postureA.bone_rotation[bone] = Lerp(1.0f / 3, startPosture->bone_rotation[bone], an_hat);
-      }
 
       // special case
       // bn = lerp(qn, lerp(qn-2, qn-1, 2.0), 1.0f / 3) for getting the last one.  since we have 1 offset so:
@@ -398,8 +385,28 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
       postureB.root_pos = Lerp(1.0f / 3, endPosture->root_pos, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos));
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
       {
-        postureB.bone_rotation[bone] = Lerp(1.0f / 3, endPosture->bone_rotation[bone], Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]));
+        // get bone rotation angles, build intermediate quaternion with them
+        prevStartPosture->bone_rotation[bone].getValue(prevStartAngles);
+        startPosture->bone_rotation[bone].getValue(startAngles);
+        endPosture->bone_rotation[bone].getValue(endAngles);
+        Euler2Quaternion(startAngles, startQ);
+        Euler2Quaternion(endAngles, endQ);
+        Euler2Quaternion(prevStartAngles, prevStartQ);
+
+        // for general an
+        tmpQ = Slerp(2.0, prevStartQ, startQ);
+        an_hat_q = Slerp(0.5, tmpQ, endQ);
+        intermediateQ = Slerp(1.0f / 3, startQ, an_hat_q);
+        Quaternion2Euler(intermediateQ, intermediateAngles);
+        postureA.bone_rotation[bone] = vector(intermediateAngles);
+
+        // for bn+1
+        tmpQ = Slerp(2.0, prevStartQ, startQ);
+        intermediateQ = Slerp(1.0f / 3, endQ, tmpQ);
+        Quaternion2Euler(intermediateQ, intermediateAngles);
+        postureB.bone_rotation[bone] = vector(intermediateAngles);
       }
+
     }
     else
     {
@@ -411,19 +418,36 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
       // an = lerp(qn, an_, 1.0 / 3)
       vector an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->root_pos, startPosture->root_pos), endPosture->root_pos);
       postureA.root_pos = Lerp(1.0f / 3, startPosture->root_pos, an_hat);
-      for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
-      {
-        an_hat = Lerp(0.5, Lerp(2.0, prevStartPosture->bone_rotation[bone], startPosture->bone_rotation[bone]), endPosture->bone_rotation[bone]);
-        postureA.bone_rotation[bone] = Lerp(1.0f / 3, startPosture->bone_rotation[bone], an_hat);
-      }
 
       // bn+1 = lerp(qn+1, an+1_, -1.0 /3)
       an_hat = Lerp(0.5, Lerp(2.0, startPosture->root_pos, endPosture->root_pos), nextEndPosture->root_pos);
       postureB.root_pos = Lerp(-1.0f / 3, endPosture->root_pos, an_hat);
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; ++bone)
       {
-        an_hat = Lerp(0.5, Lerp(2.0, startPosture->bone_rotation[bone], endPosture->bone_rotation[bone]), nextEndPosture->bone_rotation[bone]);
-        postureB.bone_rotation[bone] = Lerp(-1.0f / 3, endPosture->bone_rotation[bone], an_hat);
+        // get bone rotation angles, build intermediate quaternion with them
+        prevStartPosture->bone_rotation[bone].getValue(prevStartAngles);
+        startPosture->bone_rotation[bone].getValue(startAngles);
+        endPosture->bone_rotation[bone].getValue(endAngles);
+        nextEndPosture->bone_rotation[bone].getValue(nextEndAngles);
+        Euler2Quaternion(startAngles, startQ);
+        Euler2Quaternion(endAngles, endQ);
+        Euler2Quaternion(prevStartAngles, prevStartQ);
+        Euler2Quaternion(nextEndAngles, nextEndQ);
+
+        // for general an
+        tmpQ = Slerp(2.0, prevStartQ, startQ);
+        an_hat_q = Slerp(0.5, tmpQ, endQ);
+        intermediateQ = Slerp(1.0f / 3, startQ, an_hat_q);
+        Quaternion2Euler(intermediateQ, intermediateAngles);
+        postureA.bone_rotation[bone] = vector(intermediateAngles);
+
+        // for b2
+        tmpQ = Slerp(2.0, startQ, endQ);
+        an_hat_q = Slerp(0.5, tmpQ, nextEndQ);
+        intermediateQ = Slerp(-1.0f / 3, endQ, an_hat_q);
+        Quaternion2Euler(intermediateQ, intermediateAngles);
+        postureB.bone_rotation[bone] = vector(intermediateAngles);
+
       }
     }
 
@@ -434,11 +458,25 @@ void Interpolator::BezierInterpolationQuaternion(Motion * pInputMotion, Motion *
       double t = 1.0 * frame / (N+1);
 
       // interpolate root position
-      interpolatedPosture.root_pos =  DeCasteljauEuler(t, startPosture->root_pos, postureA.root_pos, postureB.root_pos, endPosture->root_pos);
+      interpolatedPosture.root_pos = DeCasteljauEuler(t, startPosture->root_pos, postureA.root_pos, postureB.root_pos, endPosture->root_pos);
 
       // interpolate bone rotations
       for (int bone = 0; bone < MAX_BONES_IN_ASF_FILE; bone++)
-        interpolatedPosture.bone_rotation[bone] = DeCasteljauEuler(t, startPosture->bone_rotation[bone], postureA.bone_rotation[bone], postureB.bone_rotation[bone], endPosture->bone_rotation[bone]);
+      {
+        startPosture->bone_rotation[bone].getValue(startAngles);
+        endPosture->bone_rotation[bone].getValue(endAngles);
+        Euler2Quaternion(startAngles, startQ);
+        Euler2Quaternion(endAngles, endQ);
+        postureA.bone_rotation[bone].getValue(aAngles);
+        postureB.bone_rotation[bone].getValue(bAngles);
+        Euler2Quaternion(aAngles, qA);
+        Euler2Quaternion(bAngles, qB);
+
+        intermediateQ = DeCasteljauQuaternion(t, startQ, qA, qB, endQ);
+        Quaternion2Euler(intermediateQ, intermediateAngles);
+
+        interpolatedPosture.bone_rotation[bone] = vector(intermediateAngles);
+      }
 
       pOutputMotion->SetPosture(startKeyframe + frame, interpolatedPosture);
     }
